@@ -4,7 +4,7 @@ import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 // API key must be obtained exclusively from process.env.API_KEY
 // We use a fallback string to prevent the app from crashing on load if the environment variable is missing.
 // This allows other features (like Data Migration) to work even without an API key.
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "missing_api_key_placeholder";
+const apiKey = process.env.API_KEY || "missing_api_key_placeholder";
 const ai = new GoogleGenAI({ apiKey });
 
 export interface ScannedAsset {
@@ -46,7 +46,7 @@ const runWithRetry = async <T>(fn: () => Promise<T>, retries = 5, delay = 3000):
 export const parseFinancialStatement = async (base64Data: string): Promise<ScannedAsset[] | null> => {
   try {
     // Check if API key is missing before making the call
-   if (!import.meta.env.VITE_GEMINI_API_KEY) {
+   if (!process.env.API_KEY) {
       console.warn("API Key is missing. AI features are disabled.");
       return null;
     }

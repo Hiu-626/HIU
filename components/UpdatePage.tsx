@@ -272,9 +272,15 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
       
       let finalCurrency: Currency = newItemData.currency;
       if (newAssetType === AccountType.STOCK) {
-          finalCurrency = 'HKD'; // Default
-          if (sym.endsWith('.AX')) finalCurrency = 'AUD';
-          else if (sym.includes('US') || sym.length > 5 || (!sym.endsWith('.HK') && !sym.endsWith('.AX'))) finalCurrency = 'USD';
+          // Priority Check: Explicit Suffix
+          if (sym.endsWith('.HK')) {
+              finalCurrency = 'HKD';
+          } else if (sym.endsWith('.AX')) {
+              finalCurrency = 'AUD';
+          } else {
+              // Default to USD for US stocks or others
+              finalCurrency = 'USD';
+          }
       }
 
       const newAcc: Account = { 
@@ -482,18 +488,10 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
                           </div>
                       </div>
 
-                      {/* Middle Row: Quantity & Price */}
+                      {/* Middle Row: Quantity & Price (Swapped Positions) */}
                       <div className="grid grid-cols-2 gap-3 mb-3">
-                          <div className="bg-gray-50 rounded-xl p-2">
-                              <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">{item.category === 'STOCK' ? 'Quantity' : 'Balance'}</label>
-                              <input 
-                                  type="number" 
-                                  value={item.amount} 
-                                  onChange={(e) => updateScannedItem(idx, 'amount', Number(e.target.value))}
-                                  className="w-full bg-transparent font-black text-gray-700 outline-none"
-                              />
-                          </div>
-                          {item.category === 'STOCK' && (
+                          {/* Price Input (Now Left) */}
+                          {item.category === 'STOCK' ? (
                               <div className="bg-blue-50 rounded-xl p-2">
                                   <label className="text-[9px] font-black text-blue-400 uppercase block mb-1">Price ({item.currency})</label>
                                   <input 
@@ -504,6 +502,30 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
                                       placeholder="0.00"
                                   />
                               </div>
+                          ) : (
+                              // Placeholder for CASH (Balance moves to left for better full-width look if needed, but keeping grid)
+                              <div className="bg-gray-50 rounded-xl p-2">
+                                  <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">Balance</label>
+                                  <input 
+                                      type="number" 
+                                      value={item.amount} 
+                                      onChange={(e) => updateScannedItem(idx, 'amount', Number(e.target.value))}
+                                      className="w-full bg-transparent font-black text-gray-700 outline-none"
+                                  />
+                              </div>
+                          )}
+
+                          {/* Quantity Input (Now Right) */}
+                          {item.category === 'STOCK' && (
+                            <div className="bg-gray-50 rounded-xl p-2">
+                                <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">Quantity</label>
+                                <input 
+                                    type="number" 
+                                    value={item.amount} 
+                                    onChange={(e) => updateScannedItem(idx, 'amount', Number(e.target.value))}
+                                    className="w-full bg-transparent font-black text-gray-700 outline-none"
+                                />
+                            </div>
                           )}
                       </div>
 
