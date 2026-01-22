@@ -22,8 +22,8 @@ const getApiKey = () => {
 
 const apiKey = getApiKey();
 
-// Initialize with the key (or empty string to avoid immediate crash, caught by error handling later)
-const ai = new GoogleGenAI({ apiKey });
+// Removed top-level initialization to prevent crash on app load if key is missing.
+// const ai = new GoogleGenAI({ apiKey });
 
 export interface ScannedAsset {
   category: 'CASH' | 'STOCK';
@@ -66,9 +66,12 @@ export const parseFinancialStatement = async (base64Data: string): Promise<Scann
     // Check if API key is missing before making the call
     if (!apiKey || apiKey === "missing_api_key_placeholder") {
        console.warn("API Key is missing. AI features are disabled.");
-       alert("API Key is missing. Please check your configuration.");
+       alert("API Key is missing. Please check your configuration (.env or Vercel settings).");
        return null;
     }
+
+    // 💡 Initialize AI client lazily here to prevent startup crashes
+    const ai = new GoogleGenAI({ apiKey });
 
     // 💡 修正：更精確的 Prompt，區分 Quantity (股數) 與 Price (股價)
     const prompt = `
