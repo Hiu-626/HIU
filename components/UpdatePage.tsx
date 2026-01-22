@@ -4,7 +4,7 @@ import { GAS_URL } from '../services/storageService';
 import { 
   Plus, Loader2, TrendingUp, Building2, 
   Minus, ScanLine, CloudUpload, Sparkles, X, Trash2, CheckCircle2,
-  Search, ArrowRight, TrendingDown, RefreshCw, Coins, Receipt, Calculator, DollarSign
+  Search, ArrowRight, TrendingDown, RefreshCw, Coins, Receipt, Calculator, DollarSign, Check
 } from 'lucide-react';
 import { parseFinancialStatement, ScannedAsset } from '../services/geminiService';
 import Confetti from './Confetti';
@@ -65,8 +65,12 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const [syncSummary, setSyncSummary] = useState({ totalNetWorth: 0, bankTotal: 0, stockTotal: 0, netChange: 0 });
+  
+  // New Asset State
   const [newAssetType, setNewAssetType] = useState<AccountType | null>(null);
   const [newItemData, setNewItemData] = useState({ name: '', symbol: '', amount: '', currency: 'HKD' as Currency });
+  const [addedCount, setAddedCount] = useState(0); // Track items added in current modal session
+  
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [scannedItems, setScannedItems] = useState<ScannedAsset[]>([]);
   const aiInputRef = useRef<HTMLInputElement>(null);
@@ -261,6 +265,40 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
       }
   };
 
+  // --- Add Asset Logic (Local Only) ---
+  const handleAddToLocalList = async () => {
+      const sym = formatStockSymbol(newItemData.symbol);
+      const currentPrice = Number(previewPrice) || 0;
+      
+      let finalCurrency: Currency = newItemData.currency;
+      if (newAssetType === AccountType.STOCK) {
+          finalCurrency = 'HKD'; // Default
+          if (sym.endsWith('.AX')) finalCurrency = 'AUD';
+          else if (sym.includes('US') || sym.length > 5 || (!sym.endsWith('.HK') && !sym.endsWith('.AX'))) finalCurrency = 'USD';
+      }
+
+      const newAcc: Account = { 
+          id: Date.now().toString(), 
+          name: newItemData.name || (newAssetType === AccountType.STOCK ? sym : 'Deposit'), 
+          type: newAssetType!, 
+          currency: finalCurrency, 
+          symbol: sym, 
+          quantity: newAssetType === AccountType.STOCK ? Number(newItemData.amount) : undefined, 
+          balance: newAssetType === AccountType.CASH ? Number(newItemData.amount) : Math.round(Number(newItemData.amount) * currentPrice), 
+          lastPrice: currentPrice,
+          dividendYield: newAssetType === AccountType.STOCK ? (Number(previewYield) || 0) : undefined
+      };
+      
+      // Update local state ONLY
+      setLocalAccounts(prev => [...prev, newAcc]);
+      
+      // Reset fields for next entry
+      setNewItemData({ name: '', symbol: '', amount: '', currency: 'HKD' });
+      setPreviewPrice("");
+      setPreviewYield("");
+      setAddedCount(prev => prev + 1);
+  };
+
   return (
     <div className="p-6 pb-32 space-y-6 bg-gray-50 min-h-screen">
       <Confetti active={showConfetti} onComplete={() => setShowConfetti(false)} />
@@ -279,7 +317,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
           <section>
             <div className="flex justify-between items-center mb-4 px-2">
               <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center"><Building2 size={14} className="mr-2" /> Bank</h2>
-              <button onClick={() => { setNewAssetType(AccountType.CASH); setIsModalOpen(true); }} className="text-blue-600 font-black text-xs">+ ADD</button>
+              <button onClick={() => { setNewAssetType(AccountType.CASH); setAddedCount(0); setIsModalOpen(true); }} className="text-blue-600 font-black text-xs">+ ADD</button>
             </div>
             {localAccounts.filter(a => a.type === AccountType.CASH).map(acc => (
               <div key={acc.id} className="bg-white p-5 rounded-3xl mb-3 flex justify-between items-center shadow-sm">
@@ -303,7 +341,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
                 <button onClick={handleUpdateAllPrices} className="text-green-600 font-black text-xs flex items-center gap-1">
                   <RefreshCw size={12} className={isFetchingPreview ? 'animate-spin' : ''} /> REFRESH ALL
                 </button>
-                <button onClick={() => { setNewAssetType(AccountType.STOCK); setIsModalOpen(true); }} className="text-blue-600 font-black text-xs">+ ADD</button>
+                <button onClick={() => { setNewAssetType(AccountType.STOCK); setAddedCount(0); setIsModalOpen(true); }} className="text-blue-600 font-black text-xs">+ ADD</button>
               </div>
             </div>
             {localAccounts.filter(a => a.type === AccountType.STOCK).map(acc => {
@@ -358,7 +396,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
             })}
           </section>
 
-          {/* 固定同步按鈕 */}
+          {/* 固定同步按鈕 (Main Save Button) */}
           <button onClick={() => handleFinalSave(localAccounts)} disabled={isSaving} className="fixed bottom-28 left-6 right-6 bg-blue-600 text-white py-5 rounded-full font-black shadow-2xl flex justify-center items-center gap-3 active:scale-95 disabled:bg-gray-300 z-50">
             {isSaving ? <Loader2 className="animate-spin" /> : <CloudUpload size={20} />} 
             {isSaving ? '同步中...' : '儲存並同步至雲端'}
@@ -508,19 +546,30 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
         </div>
       )}
 
-      {/* 新增資產彈窗 */}
+      {/* 新增資產彈窗 (Batch Entry) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-6 z-[9999] backdrop-blur-md">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 space-y-6">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 space-y-6 relative animate-in zoom-in-95">
+            {/* Added Counter */}
+            {addedCount > 0 && (
+                <div className="absolute top-4 left-0 right-0 flex justify-center pointer-events-none">
+                    <div className="bg-green-100 text-green-700 text-[10px] font-black px-3 py-1 rounded-full shadow-sm animate-in slide-in-from-top-2 flex items-center gap-1">
+                        <Check size={10} /> {addedCount} Added
+                    </div>
+                </div>
+            )}
+
             <div className="flex justify-between items-center">
               <h3 className="font-black text-xl italic uppercase tracking-tighter">新增 {newAssetType === AccountType.STOCK ? '股票' : '銀行'}</h3>
-              <button onClick={() => { setIsModalOpen(false); setPreviewPrice(""); setPreviewYield(""); }} className="text-gray-300"><X size={24}/></button>
+              {/* Close Button behaves as 'Done' */}
+              <button onClick={() => { setIsModalOpen(false); setPreviewPrice(""); setPreviewYield(""); }} className="text-gray-300 hover:text-gray-600"><X size={24}/></button>
             </div>
+
             <div className="space-y-4">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-gray-400 uppercase">{newAssetType === AccountType.STOCK ? '股票代號' : '名稱'}</label>
                 <div className="relative">
-                  <input placeholder={newAssetType === AccountType.STOCK ? "例如: 700 或 ANZ" : "例如: HSBC"} value={newAssetType === AccountType.STOCK ? newItemData.symbol : newItemData.name} onChange={e => setNewItemData({...newItemData, [newAssetType === AccountType.STOCK ? 'symbol' : 'name']: e.target.value})} onBlur={() => { if (newAssetType === AccountType.STOCK) setNewItemData(prev => ({...prev, symbol: formatStockSymbol(newItemData.symbol)})); }} className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold text-blue-600 uppercase" />
+                  <input autoFocus placeholder={newAssetType === AccountType.STOCK ? "例如: 700 或 ANZ" : "例如: HSBC"} value={newAssetType === AccountType.STOCK ? newItemData.symbol : newItemData.name} onChange={e => setNewItemData({...newItemData, [newAssetType === AccountType.STOCK ? 'symbol' : 'name']: e.target.value})} onBlur={() => { if (newAssetType === AccountType.STOCK) setNewItemData(prev => ({...prev, symbol: formatStockSymbol(newItemData.symbol)})); }} className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold text-blue-600 uppercase" />
                   {newAssetType === AccountType.STOCK && (
                     <button onClick={async () => {
                        const fmt = formatStockSymbol(newItemData.symbol);
@@ -530,7 +579,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
                        setNewItemData(prev => ({...prev, symbol: fmt}));
                        setPreviewPrice(price);
                        setPreviewYield(dividendYield);
-                    }} className="absolute right-2 top-2 p-2 bg-blue-600 text-white rounded-xl">
+                    }} className="absolute right-2 top-2 p-2 bg-blue-600 text-white rounded-xl active:scale-95">
                        {isFetchingPreview ? <Loader2 className="animate-spin" size={16}/> : <Search size={16} />}
                     </button>
                   )}
@@ -564,36 +613,16 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
                 <label className="text-[10px] font-black text-gray-400 uppercase">{newAssetType === AccountType.STOCK ? '持股數量' : '帳戶餘額'}</label>
                 <input type="number" value={newItemData.amount} onChange={e => setNewItemData({...newItemData, amount: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold" placeholder="0.00" />
               </div>
-              <button onClick={async () => {
-                const sym = formatStockSymbol(newItemData.symbol);
-                const currentPrice = Number(previewPrice) || 0;
-                
-                // 確保 Cash 類別使用下拉選單的幣種，Stock 類別則自動偵測
-                let finalCurrency: Currency = newItemData.currency;
-                
-                if (newAssetType === AccountType.STOCK) {
-                    finalCurrency = 'HKD'; // Default
-                    if (sym.endsWith('.AX')) finalCurrency = 'AUD';
-                    else if (sym.includes('US') || sym.length > 5 || (!sym.endsWith('.HK') && !sym.endsWith('.AX'))) finalCurrency = 'USD';
-                }
-
-                const newAcc: Account = { 
-                    id: Date.now().toString(), 
-                    name: newItemData.name || (newAssetType === AccountType.STOCK ? sym : 'Deposit'), 
-                    type: newAssetType!, 
-                    currency: finalCurrency, 
-                    symbol: sym, 
-                    quantity: newAssetType === AccountType.STOCK ? Number(newItemData.amount) : undefined, 
-                    balance: newAssetType === AccountType.CASH ? Number(newItemData.amount) : Math.round(Number(newItemData.amount) * currentPrice), 
-                    lastPrice: currentPrice,
-                    dividendYield: newAssetType === AccountType.STOCK ? (Number(previewYield) || 0) : undefined
-                };
-                await handleFinalSave([...localAccounts, newAcc]);
-                setIsModalOpen(false);
-                setNewItemData({ name: '', symbol: '', amount: '', currency: 'HKD' });
-                setPreviewPrice("");
-                setPreviewYield("");
-              }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg">確認新增</button>
+              
+              {/* Batch Action Buttons */}
+              <div className="flex gap-3 pt-2">
+                 <button onClick={() => { setIsModalOpen(false); setPreviewPrice(""); setPreviewYield(""); }} className="flex-1 py-4 bg-gray-100 text-gray-500 rounded-2xl font-bold">
+                     Done
+                 </button>
+                 <button onClick={handleAddToLocalList} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2">
+                     Add to List <Plus size={18} />
+                 </button>
+              </div>
             </div>
           </div>
         </div>
