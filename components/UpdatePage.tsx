@@ -292,7 +292,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
                     <div className="text-right">
                       {/* 總值顯示：當地貨幣為主 */}
                       <div className="font-black text-blue-600 text-base">
-                          {acc.currency} {nativeValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          {acc.currency} {nativeValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                       
                       <div className="flex items-center justify-end gap-2 mt-1">
@@ -301,7 +301,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
                             {acc.dividendYield ? `${acc.dividendYield}%` : '-%'}
                           </span>
                           <span className="text-[10px] font-bold text-gray-400 uppercase italic">
-                            ≈ HK${calculateValueHKD(acc).toLocaleString()}
+                            ≈ HK${Math.round(calculateValueHKD(acc)).toLocaleString()}
                           </span>
                       </div>
                     </div>
