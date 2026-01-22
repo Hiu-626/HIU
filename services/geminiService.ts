@@ -1,10 +1,11 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 // Initialization
-// API key must be obtained exclusively from process.env.API_KEY
-// We use a fallback string to prevent the app from crashing on load if the environment variable is missing.
-// This allows other features (like Data Migration) to work even without an API key.
-const apiKey = process.env.API_KEY || "missing_api_key_placeholder";
+// Adapting for Vite/Vercel: Use import.meta.env.VITE_API_KEY
+// We also keep process.env.API_KEY as a fallback for other environments.
+const apiKey = (import.meta as any).env?.VITE_API_KEY || process.env.API_KEY || "";
+
+// Initialize with the key (or empty string to avoid immediate crash, caught by error handling later)
 const ai = new GoogleGenAI({ apiKey });
 
 export interface ScannedAsset {
@@ -46,9 +47,9 @@ const runWithRetry = async <T>(fn: () => Promise<T>, retries = 5, delay = 3000):
 export const parseFinancialStatement = async (base64Data: string): Promise<ScannedAsset[] | null> => {
   try {
     // Check if API key is missing before making the call
-   if (!process.env.API_KEY) {
-      console.warn("API Key is missing. AI features are disabled.");
-      return null;
+    if (!apiKey || apiKey === "missing_api_key_placeholder") {
+       console.warn("API Key is missing. AI features are disabled.");
+       return null;
     }
 
     // 💡 修正：更精確的 Prompt，區分 Quantity (股數) 與 Price (股價)
