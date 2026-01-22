@@ -1,9 +1,26 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 // Initialization
-// Adapting for Vite/Vercel: Use import.meta.env.VITE_API_KEY
-// We also keep process.env.API_KEY as a fallback for other environments.
-const apiKey = (import.meta as any).env?.VITE_API_KEY || process.env.API_KEY || "";
+// Helper function to safely get the API key across different environments (Vite, Node, Browser)
+const getApiKey = () => {
+  // 1. Try Vite / Modern Bundlers (import.meta.env)
+  try {
+    if ((import.meta as any).env?.VITE_API_KEY) {
+      return (import.meta as any).env.VITE_API_KEY;
+    }
+  } catch (e) {}
+
+  // 2. Try Node.js / Webpack (process.env) - Safe check for 'process' existence
+  try {
+    if (typeof process !== 'undefined' && process.env?.API_KEY) {
+      return process.env.API_KEY;
+    }
+  } catch (e) {}
+
+  return "";
+};
+
+const apiKey = getApiKey();
 
 // Initialize with the key (or empty string to avoid immediate crash, caught by error handling later)
 const ai = new GoogleGenAI({ apiKey });
@@ -49,6 +66,7 @@ export const parseFinancialStatement = async (base64Data: string): Promise<Scann
     // Check if API key is missing before making the call
     if (!apiKey || apiKey === "missing_api_key_placeholder") {
        console.warn("API Key is missing. AI features are disabled.");
+       alert("API Key is missing. Please check your configuration.");
        return null;
     }
 

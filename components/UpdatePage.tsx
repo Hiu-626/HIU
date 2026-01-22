@@ -377,10 +377,21 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
                       </div>
                       
                       <div className="flex items-center justify-end gap-2 mt-1">
-                          <span className="text-[9px] font-bold bg-green-50 text-green-700 px-1.5 py-0.5 rounded flex items-center">
-                            <Receipt size={10} className="mr-1"/>
-                            {acc.dividendYield ? `${acc.dividendYield}%` : '-%'}
-                          </span>
+                          <div className="flex items-center bg-green-50 rounded px-1.5 py-0.5 transition-colors focus-within:bg-green-100">
+                              <Receipt size={10} className="mr-1 text-green-700"/>
+                              <input 
+                                  type="number" 
+                                  step="0.01"
+                                  value={acc.dividendYield ?? ''} 
+                                  onChange={e => {
+                                      const val = e.target.value;
+                                      setLocalAccounts(prev => prev.map(p => p.id === acc.id ? {...p, dividendYield: val === '' ? 0 : Number(val)} : p));
+                                  }}
+                                  className="w-10 bg-transparent text-green-700 font-bold text-[9px] outline-none text-right placeholder-green-300" 
+                                  placeholder="Yield"
+                              />
+                              <span className="text-[9px] font-bold text-green-700 ml-0.5">%</span>
+                          </div>
                           <span className="text-[10px] font-bold text-gray-400 uppercase italic">
                             ≈ HK${Math.round(calculateValueHKD(acc)).toLocaleString()}
                           </span>
