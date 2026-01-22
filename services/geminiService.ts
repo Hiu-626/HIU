@@ -51,17 +51,19 @@ export const parseFinancialStatement = async (base64Data: string): Promise<Scann
       return null;
     }
 
-    // 💡 修正：使用 'gemini-3-flash-preview' 以獲得更穩定的 Quota 限制
+    // 💡 修正：更精確的 Prompt，區分 Quantity (股數) 與 Price (股價)
     const prompt = `
       Instructions:
       1. Analyze the attached financial statement image.
       2. Extract all assets into a JSON array.
-      3. For each asset:
+      3. For each asset, extract the following fields precisely:
          - category: 'STOCK' (for shares/equities/funds) or 'CASH' (for bank balances/deposits).
-         - institution: Name of the bank or brokerage. clearly identify names like 'CommSec', 'Hang Seng', 'HSBC', 'Schwab', 'IBKR'.
-         - symbol: The ticker or stock code (e.g., 'AAPL', '0700.HK', 'GOLD.AX', 'IVV'). If CASH, leave empty.
-         - amount: If STOCK, must be the QUANTITY of shares. If CASH, must be the BALANCE.
-         - currency: Extract 'HKD', 'USD', or 'AUD'. Default to 'HKD' if not found.
+         - institution: The Name of the holding/bank (e.g. 'Apple Inc', 'HSBC', 'Vanguard 500').
+         - symbol: The ticker code (e.g. 'AAPL', '0700.HK', 'IVV'). If CASH, leave empty.
+         - quantity: (STOCK ONLY) The number of shares/units held. Do NOT confuse with Price.
+         - unitPrice: (STOCK ONLY) The price per share.
+         - balance: (CASH ONLY) The total balance. For STOCK, this is the Market Value.
+         - currency: 'HKD', 'USD', or 'AUD'.
       
       Return ONLY a JSON array.
     `;
@@ -88,12 +90,21 @@ export const parseFinancialStatement = async (base64Data: string): Promise<Scann
     
     if (!text) return null;
 
-    // 💡 增加 JSON 解析與格式檢查
     try {
       const parsed = JSON.parse(text);
-      // 自動處理 AI 可能包裝在物件內的情況
-      const finalData = Array.isArray(parsed) ? parsed : (parsed.assets || []);
+      const rawData = Array.isArray(parsed) ? parsed : (parsed.assets || []);
       
+      // Map AI response to internal format
+      const finalData = rawData.map((item: any) => ({
+          category: item.category === 'STOCK' ? 'STOCK' : 'CASH',
+          institution: item.institution || item.name || 'Unknown',
+          symbol: item.symbol,
+          // If STOCK, amount is quantity. If CASH, amount is balance.
+          amount: item.category === 'STOCK' ? (Number(item.quantity) || 0) : (Number(item.balance) || 0),
+          currency: item.currency || 'HKD',
+          price: Number(item.unitPrice) || Number(item.price) || 0
+      }));
+
       console.log("AI Analysis Success:", finalData);
       return finalData as ScannedAsset[];
     } catch (e) {
@@ -102,7 +113,6 @@ export const parseFinancialStatement = async (base64Data: string): Promise<Scann
     }
 
   } catch (error: any) {
-    // 這裡會捕獲 404, 403, 429 等嚴重錯誤
     console.error("Critical AI Error Details:", error);
     return null;
   }
