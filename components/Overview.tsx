@@ -5,7 +5,7 @@ import { calculateTotalWealthHKD } from '../services/storageService';
 import { 
   CheckCircle, Clock, Settings, Database, Smartphone, Download, X, 
   Building2, TrendingUp, Globe, FileKey, ChevronRight, LogOut, Receipt, 
-  FileJson, Upload, HardDrive, AlertTriangle
+  FileJson, Upload, HardDrive, AlertTriangle, ArrowRightLeft
 } from 'lucide-react';
 
 interface OverviewProps {
@@ -103,7 +103,7 @@ const Overview: React.FC<OverviewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `WealthSnapshot_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `WealthSnapshot_Migration_${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(link);
     link.click();
     URL.revokeObjectURL(url);
@@ -121,13 +121,13 @@ const Overview: React.FC<OverviewProps> = ({
             
             // Basic validation
             if (Array.isArray(parsed.accounts) && Array.isArray(parsed.fixedDeposits)) {
-                if (window.confirm("Warning: This will OVERWRITE your current data with the backup file. Continue?")) {
+                if (window.confirm("CONFIRM MIGRATION:\n\nThis will OVERWRITE your current data with the backup file. This action cannot be undone.\n\nContinue?")) {
                     localStorage.setItem('wealth_snapshot_v1', JSON.stringify(parsed));
-                    alert("Import successful! The app will now reload.");
+                    alert("Migration successful! The app will now reload.");
                     window.location.reload(); // Force reload to apply state
                 }
             } else {
-                alert("Invalid JSON file format. Missing accounts or fixedDeposits.");
+                alert("Invalid JSON file format. This does not look like a WealthSnapshot backup.");
             }
         } catch (error) {
             alert("Failed to parse JSON file.");
@@ -417,9 +417,11 @@ const Overview: React.FC<OverviewProps> = ({
 
                       <hr className="border-gray-100 my-2" />
 
-                      {/* --- DATA MANAGEMENT SECTION --- */}
+                      {/* --- DATA MIGRATION SECTION --- */}
                       <div>
-                        <h3 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">Data Management</h3>
+                        <h3 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1">
+                            <ArrowRightLeft className="w-3 h-3"/> Data Migration & Backup
+                        </h3>
                         <div className="grid grid-cols-2 gap-3 mb-3">
                             {/* Backup JSON */}
                             <button onClick={handleExportJSON} className="flex flex-col items-center justify-center bg-gray-50 hover:bg-gray-100 border border-gray-100 p-4 rounded-xl transition-all">
@@ -470,7 +472,7 @@ const Overview: React.FC<OverviewProps> = ({
                       <div className="bg-yellow-50 p-3 rounded-xl flex items-start mt-2">
                         <AlertTriangle className="w-4 h-4 text-yellow-600 mr-2 mt-0.5" />
                         <p className="text-[10px] text-yellow-700 leading-tight">
-                            <strong>Note:</strong> JSON Restore will overwrite current data. Please backup before restoring.
+                            <strong>Warning:</strong> Restoring from JSON will completely replace your current data. Please backup first.
                         </p>
                       </div>
 
