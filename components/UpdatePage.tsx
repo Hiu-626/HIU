@@ -159,16 +159,20 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
     } catch (e) { alert("同步失敗"); } finally { setIsSaving(false); }
   };
 
+  /**
+   * REFRESH ALL: 只更新股價 (Price Only)
+   * 不覆蓋手動輸入的 Yield
+   */
   const handleUpdateAllPrices = async () => {
     setIsFetchingPreview(true);
     const updated = await Promise.all(localAccounts.map(async (acc) => {
       if (acc.type === AccountType.STOCK && acc.symbol) {
-        const { price, dividendYield } = await fetchSinglePrice(acc.symbol);
+        const { price } = await fetchSinglePrice(acc.symbol); // Only take price
         if (price > 0) {
             return { 
                 ...acc, 
                 lastPrice: price, 
-                dividendYield: dividendYield,
+                // dividendYield: dividendYield,  // Keep existing yield
                 balance: Math.round((acc.quantity || 0) * price) 
             };
         }
@@ -179,15 +183,18 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
     setIsFetchingPreview(false);
   };
 
+  /**
+   * 單一更新：只更新股價 (Price Only)
+   */
   const handleManualSinglePriceUpdate = async (id: string, symbol?: string) => {
     if (!symbol) return;
-    const { price, dividendYield } = await fetchSinglePrice(symbol);
+    const { price } = await fetchSinglePrice(symbol); // Only take price
     if (price > 0) {
       setLocalAccounts(prev => prev.map(item => 
         item.id === id ? {
             ...item, 
             lastPrice: price, 
-            dividendYield: dividendYield, 
+            // Keep existing yield
             balance: Math.round((item.quantity || 0) * price)
         } : item
       ));
@@ -343,7 +350,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
               <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center"><TrendingUp size={14} className="mr-2" /> Stocks</h2>
               <div className="flex gap-4">
                 <button onClick={handleUpdateAllPrices} className="text-green-600 font-black text-xs flex items-center gap-1">
-                  <RefreshCw size={12} className={isFetchingPreview ? 'animate-spin' : ''} /> REFRESH ALL
+                  <RefreshCw size={12} className={isFetchingPreview ? 'animate-spin' : ''} /> REFRESH PRICES
                 </button>
                 <button onClick={() => { setNewAssetType(AccountType.STOCK); setAddedCount(0); setIsModalOpen(true); }} className="text-blue-600 font-black text-xs">+ ADD</button>
               </div>
@@ -366,7 +373,8 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
                               }} className="w-16 bg-transparent text-blue-600 font-black text-[10px] outline-none" />
                               <span className="text-[9px] font-black text-blue-300 ml-1">{acc.currency}</span>
                           </div>
-                          <button onClick={() => handleManualSinglePriceUpdate(acc.id, acc.symbol)} className="text-blue-600"><RefreshCw size={12}/></button>
+                          {/* Price Only Refresh Button */}
+                          <button onClick={() => handleManualSinglePriceUpdate(acc.id, acc.symbol)} className="text-blue-600 p-1 hover:bg-blue-50 rounded-full" title="Update Price Only"><RefreshCw size={12}/></button>
                         </div>
                       </div>
                     </div>
@@ -376,9 +384,11 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
                           {acc.currency} {nativeValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                       
-                      <div className="flex items-center justify-end gap-2 mt-1">
-                          <div className="flex items-center bg-green-50 rounded px-1.5 py-0.5 transition-colors focus-within:bg-green-100">
-                              <Receipt size={10} className="mr-1 text-green-700"/>
+                      {/* Dividend Yield Edit Section - Vertically Stacked for cleaner UI */}
+                      <div className="flex flex-col items-end gap-1 mt-1.5">
+                          <div className="flex items-center bg-green-50 rounded-lg px-2 py-1 border border-green-100 transition-colors hover:border-green-300">
+                              <Receipt size={12} className="mr-1.5 text-green-600"/>
+                              <span className="text-[10px] font-extrabold text-green-700 mr-1">Yield</span>
                               <input 
                                   type="number" 
                                   step="0.01"
@@ -387,14 +397,14 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
                                       const val = e.target.value;
                                       setLocalAccounts(prev => prev.map(p => p.id === acc.id ? {...p, dividendYield: val === '' ? 0 : Number(val)} : p));
                                   }}
-                                  className="w-10 bg-transparent text-green-700 font-bold text-[9px] outline-none text-right placeholder-green-300" 
-                                  placeholder="Yield"
+                                  className="w-12 bg-transparent text-green-700 font-black text-xs outline-none text-right placeholder-green-300" 
+                                  placeholder="0"
                               />
-                              <span className="text-[9px] font-bold text-green-700 ml-0.5">%</span>
+                              <span className="text-[10px] font-extrabold text-green-700 ml-0.5">%</span>
                           </div>
-                          <span className="text-[10px] font-bold text-gray-400 uppercase italic">
+                          <div className="text-[10px] font-bold text-gray-400 uppercase italic">
                             ≈ HK${Math.round(calculateValueHKD(acc)).toLocaleString()}
-                          </span>
+                          </div>
                       </div>
                     </div>
                   </div>
