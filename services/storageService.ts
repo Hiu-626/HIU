@@ -4,7 +4,7 @@ import { INITIAL_DATA } from '../constants';
 const STORAGE_KEY = 'wealth_snapshot_v1';
 
 // Updated GAS URL
-export const GAS_URL = 'https://script.google.com/macros/s/AKfycbzPRDJ5pVsq30734w6d4m5z9HkuBngC23ceMa10aIcpKFjW3FyMH6x6nwKB-zlvURCD_w/exec';
+export const GAS_URL = 'https://script.google.com/macros/s/AKfycbwr25mwbzxFN06JOfk6xS43YA4JCm9cRIrSbwci_tJQAklCJWFVJXpU1U4A6xS_ci5GLg/exec';
 
 /**
  * Keep as is: Read local storage

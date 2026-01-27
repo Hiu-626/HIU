@@ -37,14 +37,14 @@ const App: React.FC = () => {
 
   // --- 1. 計算總資產邏輯 ---
   const calculateCorrectedTotalWealth = useCallback((accounts: Account[], fds: FixedDeposit[]) => {
-    // 過濾掉非定存類型的項目（如有需要）
     const effectiveFDs = fds.filter(fd => fd.type !== 'Savings');
     return calculateTotalWealthHKD(accounts, effectiveFDs);
   }, []);
 
   // --- 2. 核心同步功能 (Write to Google Sheet & Firebase) ---
   const triggerCloudSync = async (newState: AppState) => {
-    if (!userPwd || userPwd === '') return;
+    // 確保有 UserID 才執行同步，避免寫入預設的 8888
+    if (!userPwd || userPwd.trim() === '') return;
     setSyncStatus('syncing');
 
     // A. Firebase 同步
@@ -56,26 +56,28 @@ const App: React.FC = () => {
       } catch (e) { console.error("Firebase error:", e); }
     }
 
-    // B. Google Sheet 同步 (精準對位版)
+    // B. Google Sheet 同步
     try {
       const totalWealth = calculateCorrectedTotalWealth(newState.accounts, newState.fixedDeposits);
       
       const allAssets = [
         // 股票與現金帳戶
         ...newState.accounts.map(acc => ({
-          inst: acc.name,             // 填入 Stocks I 欄: Original_Input
+          inst: acc.name,
           sym: (acc.symbol || "").trim().toUpperCase(), 
           qty: acc.type === 'Stock' ? Number(acc.quantity || 0) : 0, 
           prc: acc.type === 'Stock' ? Number(acc.lastPrice || 0) : 0, 
           bal: acc.type !== 'Stock' ? Number(acc.balance || 0) : 0, 
           cur: acc.currency || "HKD",
           type: acc.type === 'Stock' ? 'STOCK' : 'CASH',
+          // ✨ 關鍵修改：將股息率傳給 GAS 的 stocks yield (F欄)
+          yield: acc.dividendYield || 0, 
           isFD: false,
           rate: "" 
         })),
         // 定期存款
         ...newState.fixedDeposits.map(fd => ({
-          inst: fd.bankName,          // 對應 Original_Input
+          inst: fd.bankName,
           sym: "-",
           qty: 0,
           prc: 0,
@@ -84,7 +86,8 @@ const App: React.FC = () => {
           type: 'CASH',
           isFD: true,
           maturityDate: fd.maturityDate,
-          rate: fd.interestRate || "" // 傳給 GAS 生成 Reference (例如 3.5%)
+          rate: fd.interestRate || "",
+          yield: 0
         }))
       ];
 
@@ -92,7 +95,7 @@ const App: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
-          userId: userPwd,
+          userId: userPwd, // 傳送當前登入的 User ID (如 123)
           total: totalWealth, 
           assets: allAssets
         })
@@ -106,6 +109,7 @@ const App: React.FC = () => {
       }
     } catch (error) { 
       console.error("Sheet Sync Error:", error);
+      // 注意：如果是 CORS 問題但資料有進去，這裡也會 catch 到，但不影響寫入
       setSyncStatus('offline'); 
     }
   };
@@ -204,7 +208,6 @@ const App: React.FC = () => {
   // --- 6. 主 App 渲染 ---
   return (
     <Layout currentView={currentView} onNavigate={setCurrentView}>
-      {/* 同步狀態欄 */}
       <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-1.5 bg-white/90 backdrop-blur-md border-b border-gray-100 text-[10px] uppercase font-black text-gray-400">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-3 w-3 text-green-500" />
