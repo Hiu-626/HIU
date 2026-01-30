@@ -23,7 +23,11 @@ const Layout: React.FC<LayoutProps> = ({ currentView, onNavigate, children }) =>
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-between items-center max-w-md mx-auto z-40">
+      {/* 
+          pb-[calc(1rem+env(safe-area-inset-bottom))] ensures the buttons are pushed up 
+          above the iOS home swipe indicator, preventing accidental closes.
+      */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] flex justify-between items-center max-w-md mx-auto z-40">
         {navItems.map(item => {
           const isActive = item.id === currentView || (item.id === 'overview' && currentView === 'fd-manager');
           const Icon = item.icon;

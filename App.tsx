@@ -208,7 +208,12 @@ const App: React.FC = () => {
   // --- 6. 主 App 渲染 ---
   return (
     <Layout currentView={currentView} onNavigate={setCurrentView}>
-      <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-1.5 bg-white/90 backdrop-blur-md border-b border-gray-100 text-[10px] uppercase font-black text-gray-400">
+      {/* 
+         PWA Header Adjustment:
+         pt-[env(safe-area-inset-top)] ensures content starts below the notch.
+         bg-white/90 extends behind the status bar for that native translucent look.
+      */}
+      <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] bg-white/90 backdrop-blur-md border-b border-gray-100 text-[10px] uppercase font-black text-gray-400">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-3 w-3 text-green-500" />
           <span>UserID: {userPwd}</span>
@@ -221,7 +226,8 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      <div className="pt-8">
+      {/* Main Content Padding - Pushed down to account for the larger header */}
+      <div className="pt-20">
         {currentView === 'overview' && (
           <Overview 
             accounts={data.accounts} 
