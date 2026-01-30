@@ -8,9 +8,11 @@
       "sizes": "512x512"
     }
   ],
-  "start_url": ".",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "theme_color": "#0052CC",
+  "theme_color": "#ffffff",
   "background_color": "#F8F9FA",
   "orientation": "portrait"
 }
