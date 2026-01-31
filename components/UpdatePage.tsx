@@ -12,7 +12,7 @@ import Confetti from './Confetti';
 interface UpdatePageProps {
   accounts: Account[];
   onSave: (updatedAccounts: Account[]) => void;
-  fetchLivePrice?: (symbol: string) => Promise<number>;
+  userPwd: string;
 }
 
 // 同步成功彈窗
@@ -54,7 +54,7 @@ const SyncSuccessModal = ({ isOpen, onClose, data }: { isOpen: boolean, onClose:
   );
 };
 
-const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
+const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) => {
   const [activeTab, setActiveTab] = useState<'MANUAL' | 'AI_SCANNER'>('MANUAL');
   const [showConfetti, setShowConfetti] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -88,13 +88,17 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
 
   const fetchSinglePrice = async (sym: string) => {
     if (!sym) return { price: 0, dividendYield: 0 };
-    const pwd = localStorage.getItem('wealth_snapshot_pwd') || "8888";
+    // FIX: Use prop userPwd instead of unreliable localStorage
+    const pwd = userPwd || "8888"; 
     try {
       const url = `${GAS_URL}?action=READ_STOCKS&userId=${encodeURIComponent(pwd)}&symbol=${encodeURIComponent(sym.toUpperCase().trim())}`;
       const res = await fetch(url);
       const d = await res.json();
       return { price: Number(d.price) || 0, dividendYield: Number(d.yield) || 0 };
-    } catch (e) { return { price: 0, dividendYield: 0 }; }
+    } catch (e) { 
+        console.error("Price fetch error:", e);
+        return { price: 0, dividendYield: 0 }; 
+    }
   };
 
   const formatStockSymbol = (input: string) => {
@@ -109,14 +113,16 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
 
   const handleFinalSave = async (updatedLocalAccounts: Account[]) => {
     setIsSaving(true);
-    const pwd = localStorage.getItem('wealth_snapshot_pwd') || "8888";
+    // FIX: Use prop userPwd
+    const pwd = userPwd || "8888";
     try {
-        const storedData = JSON.parse(localStorage.getItem('wealth_snapshot_data') || '{}');
+        const storedData = JSON.parse(localStorage.getItem('wealth_snapshot_v1') || '{}');
         const currentFDs = storedData.fixedDeposits || [];
         const accountTotal = updatedLocalAccounts.reduce((sum, a) => sum + calculateValueHKD(a), 0);
         const fdTotal = currentFDs.reduce((sum: number, f: any) => sum + Number(f.principal || 0), 0);
         const currentTotal = accountTotal + fdTotal;
-        const oldTotal = accounts.reduce((sum, acc) => sum + calculateValueHKD(acc), 0) + (storedData.fixedDeposits?.reduce((s:number,f:any)=>s+Number(f.principal),0) || 0);
+        // Old total calc might be slightly inaccurate if LS is stale, but acceptable for summary
+        const oldTotal = accounts.reduce((sum, acc) => sum + calculateValueHKD(acc), 0) + fdTotal;
 
         const payload = {
             userId: pwd,
@@ -156,7 +162,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
         setLocalAccounts(updatedLocalAccounts);
         setShowConfetti(true);
         setIsSuccessModalOpen(true);
-    } catch (e) { alert("同步失敗"); } finally { setIsSaving(false); }
+    } catch (e) { alert("同步失敗: " + e); } finally { setIsSaving(false); }
   };
 
   /**
@@ -188,6 +194,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
    */
   const handleManualSinglePriceUpdate = async (id: string, symbol?: string) => {
     if (!symbol) return;
+    // Add visual feedback for single item loading if needed, or rely on UI to update
     const { price } = await fetchSinglePrice(symbol); // Only take price
     if (price > 0) {
       setLocalAccounts(prev => prev.map(item => 
@@ -198,6 +205,8 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave }) => {
             balance: Math.round((item.quantity || 0) * price)
         } : item
       ));
+    } else {
+        alert("Unable to fetch price for " + symbol + ". Please check symbol or try again.");
     }
   };
 

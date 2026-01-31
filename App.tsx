@@ -245,7 +245,7 @@ const App: React.FC = () => {
           <UpdatePage 
             accounts={data.accounts} 
             onSave={handleUpdateAccounts} 
-            fetchLivePrice={fetchLivePrice} 
+            userPwd={userPwd}
           />
         )}
 
