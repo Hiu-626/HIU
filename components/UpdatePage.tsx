@@ -59,6 +59,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
   const [showConfetti, setShowConfetti] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [localAccounts, setLocalAccounts] = useState<Account[]>([...accounts]);
+  const [loadingRowIds, setLoadingRowIds] = useState<Set<string>>(new Set());
   
   useEffect(() => { setLocalAccounts([...accounts]); }, [accounts]);
 
@@ -88,11 +89,18 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
 
   const fetchSinglePrice = async (sym: string) => {
     if (!sym) return { price: 0, dividendYield: 0 };
-    // FIX: Use prop userPwd instead of unreliable localStorage
+    // FIX: Use prop userPwd
     const pwd = userPwd || "8888"; 
     try {
-      const url = `${GAS_URL}?action=READ_STOCKS&userId=${encodeURIComponent(pwd)}&symbol=${encodeURIComponent(sym.toUpperCase().trim())}`;
-      const res = await fetch(url);
+      // FIX: Added timestamp to prevent mobile caching
+      const url = `${GAS_URL}?action=READ_STOCKS&userId=${encodeURIComponent(pwd)}&symbol=${encodeURIComponent(sym.toUpperCase().trim())}&t=${Date.now()}`;
+      
+      const res = await fetch(url, {
+          method: 'GET',
+          redirect: 'follow',
+      });
+
+      if (!res.ok) throw new Error("Network error");
       const d = await res.json();
       return { price: Number(d.price) || 0, dividendYield: Number(d.yield) || 0 };
     } catch (e) { 
@@ -113,7 +121,6 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
 
   const handleFinalSave = async (updatedLocalAccounts: Account[]) => {
     setIsSaving(true);
-    // FIX: Use prop userPwd
     const pwd = userPwd || "8888";
     try {
         const storedData = JSON.parse(localStorage.getItem('wealth_snapshot_v1') || '{}');
@@ -121,7 +128,6 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
         const accountTotal = updatedLocalAccounts.reduce((sum, a) => sum + calculateValueHKD(a), 0);
         const fdTotal = currentFDs.reduce((sum: number, f: any) => sum + Number(f.principal || 0), 0);
         const currentTotal = accountTotal + fdTotal;
-        // Old total calc might be slightly inaccurate if LS is stale, but acceptable for summary
         const oldTotal = accounts.reduce((sum, acc) => sum + calculateValueHKD(acc), 0) + fdTotal;
 
         const payload = {
@@ -167,18 +173,16 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
 
   /**
    * REFRESH ALL: 只更新股價 (Price Only)
-   * 不覆蓋手動輸入的 Yield
    */
   const handleUpdateAllPrices = async () => {
     setIsFetchingPreview(true);
     const updated = await Promise.all(localAccounts.map(async (acc) => {
       if (acc.type === AccountType.STOCK && acc.symbol) {
-        const { price } = await fetchSinglePrice(acc.symbol); // Only take price
+        const { price } = await fetchSinglePrice(acc.symbol);
         if (price > 0) {
             return { 
                 ...acc, 
                 lastPrice: price, 
-                // dividendYield: dividendYield,  // Keep existing yield
                 balance: Math.round((acc.quantity || 0) * price) 
             };
         }
@@ -191,27 +195,38 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
 
   /**
    * 單一更新：只更新股價 (Price Only)
+   * 增加 Loading 狀態
    */
   const handleManualSinglePriceUpdate = async (id: string, symbol?: string) => {
     if (!symbol) return;
-    // Add visual feedback for single item loading if needed, or rely on UI to update
-    const { price } = await fetchSinglePrice(symbol); // Only take price
-    if (price > 0) {
-      setLocalAccounts(prev => prev.map(item => 
-        item.id === id ? {
-            ...item, 
-            lastPrice: price, 
-            // Keep existing yield
-            balance: Math.round((item.quantity || 0) * price)
-        } : item
-      ));
-    } else {
-        alert("Unable to fetch price for " + symbol + ". Please check symbol or try again.");
+    
+    setLoadingRowIds(prev => new Set(prev).add(id));
+    
+    try {
+        const { price } = await fetchSinglePrice(symbol);
+        if (price > 0) {
+          setLocalAccounts(prev => prev.map(item => 
+            item.id === id ? {
+                ...item, 
+                lastPrice: price, 
+                balance: Math.round((item.quantity || 0) * price)
+            } : item
+          ));
+        } else {
+            // alert("Unable to fetch price for " + symbol);
+        }
+    } catch(e) {
+        // alert("Connection error");
+    } finally {
+        setLoadingRowIds(prev => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+        });
     }
   };
 
   // --- AI Scanner Handlers ---
-
   const handleAIFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -222,7 +237,6 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
         const base64 = (reader.result as string).split(',')[1];
         const results = await parseFinancialStatement(base64);
         if (results) {
-           // Initial fetch for convenience
            const processed = await Promise.all(results.map(async (item) => {
              const finalName = (item.institution && item.institution !== 'Unknown') ? item.institution : (item.category === 'STOCK' ? 'Stocks' : 'Deposit');
              let livePrice = 0;
@@ -235,7 +249,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
              return { 
                  ...item, 
                  institution: finalName, 
-                 price: livePrice || item.price || 0, // Use AI price if live price fails or not found
+                 price: livePrice || item.price || 0,
                  dividendYield: liveYield
              };
            }));
@@ -281,7 +295,6 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
       }
   };
 
-  // --- Add Asset Logic (Local Only) ---
   const handleAddToLocalList = async () => {
       const sym = formatStockSymbol(newItemData.symbol);
       const currentPrice = Number(previewPrice) || 0;
@@ -308,11 +321,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
           lastPrice: currentPrice,
           dividendYield: newAssetType === AccountType.STOCK ? (Number(previewYield) || 0) : undefined
       };
-      
-      // Update local state ONLY
       setLocalAccounts(prev => [...prev, newAcc]);
-      
-      // Reset fields for next entry
       setNewItemData({ name: '', symbol: '', amount: '', currency: 'HKD' });
       setPreviewPrice("");
       setPreviewYield("");
@@ -358,7 +367,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
             <div className="flex justify-between items-center mb-4 px-2">
               <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center"><TrendingUp size={14} className="mr-2" /> Stocks</h2>
               <div className="flex gap-4">
-                <button onClick={handleUpdateAllPrices} className="text-green-600 font-black text-xs flex items-center gap-1">
+                <button onClick={handleUpdateAllPrices} className="text-green-600 font-black text-xs flex items-center gap-1 active:scale-95 transition-transform">
                   <RefreshCw size={12} className={isFetchingPreview ? 'animate-spin' : ''} /> REFRESH PRICES
                 </button>
                 <button onClick={() => { setNewAssetType(AccountType.STOCK); setAddedCount(0); setIsModalOpen(true); }} className="text-blue-600 font-black text-xs">+ ADD</button>
@@ -366,6 +375,8 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
             </div>
             {localAccounts.filter(a => a.type === AccountType.STOCK).map(acc => {
               const nativeValue = (Number(acc.quantity) || 0) * (Number(acc.lastPrice) || 0);
+              const isLoading = loadingRowIds.has(acc.id);
+              
               return (
                 <div key={acc.id} className="bg-white p-5 rounded-[2rem] mb-4 shadow-sm border border-gray-100">
                   <div className="flex justify-between items-start mb-4">
@@ -382,8 +393,15 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
                               }} className="w-16 bg-transparent text-blue-600 font-black text-[10px] outline-none" />
                               <span className="text-[9px] font-black text-blue-300 ml-1">{acc.currency}</span>
                           </div>
-                          {/* Price Only Refresh Button */}
-                          <button onClick={() => handleManualSinglePriceUpdate(acc.id, acc.symbol)} className="text-blue-600 p-1 hover:bg-blue-50 rounded-full" title="Update Price Only"><RefreshCw size={12}/></button>
+                          {/* Price Only Refresh Button with Loading */}
+                          <button 
+                             onClick={() => handleManualSinglePriceUpdate(acc.id, acc.symbol)} 
+                             disabled={isLoading}
+                             className={`p-2 rounded-full transition-all ${isLoading ? 'bg-blue-50 text-blue-400 cursor-wait' : 'text-blue-600 hover:bg-blue-50 active:scale-90 active:bg-blue-100'}`}
+                             title="Update Price Only"
+                          >
+                             <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''}/>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -418,12 +436,12 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-2xl">
-                    <button onClick={() => setLocalAccounts(prev => prev.map(p => p.id === acc.id ? {...p, quantity: Math.max(0, (Number(p.quantity)||0)-1), balance: Math.round(Math.max(0, (Number(p.quantity)||0)-1) * (p.lastPrice||0))} : p))} className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-gray-400"><Minus size={16}/></button>
+                    <button onClick={() => setLocalAccounts(prev => prev.map(p => p.id === acc.id ? {...p, quantity: Math.max(0, (Number(p.quantity)||0)-1), balance: Math.round(Math.max(0, (Number(p.quantity)||0)-1) * (p.lastPrice||0))} : p))} className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-gray-400 active:scale-95 transition-transform"><Minus size={16}/></button>
                     <input type="number" value={acc.quantity} onChange={e => {
                       const q = Number(e.target.value);
                       setLocalAccounts(prev => prev.map(p => p.id === acc.id ? {...p, quantity: q, balance: Math.round(q * (p.lastPrice||0))} : p));
                     }} className="flex-1 text-center font-black bg-transparent outline-none text-gray-700" />
-                    <button onClick={() => setLocalAccounts(prev => prev.map(p => p.id === acc.id ? {...p, quantity: (Number(p.quantity)||0)+1, balance: Math.round(((Number(p.quantity)||0)+1) * (p.lastPrice||0))} : p))} className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-gray-400"><Plus size={16}/></button>
+                    <button onClick={() => setLocalAccounts(prev => prev.map(p => p.id === acc.id ? {...p, quantity: (Number(p.quantity)||0)+1, balance: Math.round(((Number(p.quantity)||0)+1) * (p.lastPrice||0))} : p))} className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-gray-400 active:scale-95 transition-transform"><Plus size={16}/></button>
                   </div>
                 </div>
               );
@@ -437,7 +455,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
           </button>
         </div>
       ) : (
-        /* AI 掃描區塊 (功能全開 - 編輯模式) */
+        /* AI 掃描區塊 */
         <div className="space-y-6 animate-in fade-in">
           {scannedItems.length === 0 && (
              <div onClick={() => !isAnalyzing && aiInputRef.current?.click()} className={`border-2 border-dashed rounded-[2.5rem] p-16 text-center transition-all ${isAnalyzing ? 'border-blue-300 bg-blue-50' : 'border-gray-300 bg-white cursor-pointer'}`}>
@@ -452,13 +470,11 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
 
           {scannedItems.length > 0 && (
             <div className="mb-24">
-              {/* Header */}
               <div className="flex justify-between items-center mb-4">
                  <div className="flex items-center gap-2 font-black italic text-blue-600"><Sparkles size={18}/> 掃描結果 ({scannedItems.length})</div>
                  <button onClick={() => setScannedItems([])} className="text-gray-400 p-2"><X size={20}/></button>
               </div>
 
-              {/* Bulk Actions Toolbar */}
               <div className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100 mb-4 flex gap-2 overflow-x-auto no-scrollbar">
                   <div className="flex gap-1 items-center px-2 border-r border-gray-100">
                       <span className="text-[9px] font-black text-gray-400 uppercase whitespace-nowrap">SET CURRENCY:</span>
@@ -471,15 +487,12 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
                   </button>
               </div>
 
-              {/* Editable List */}
               <div className="space-y-4">
                 {scannedItems.map((item, idx) => {
                   const estValue = item.category === 'STOCK' ? (item.amount * (item.price || 0)) : item.amount;
                   return (
                     <div key={idx} className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 relative">
                       <button onClick={() => setScannedItems(prev => prev.filter((_, i) => i !== idx))} className="absolute top-4 right-4 text-gray-300 hover:text-red-400"><X size={16}/></button>
-                      
-                      {/* Top Row: Type & Name */}
                       <div className="flex gap-3 mb-3 pr-8">
                           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.category === 'STOCK' ? 'bg-purple-50 text-purple-600' : 'bg-green-50 text-green-600'}`}>
                               {item.category === 'STOCK' ? <TrendingUp size={18}/> : <Building2 size={18}/>}
@@ -515,63 +528,34 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
                               </div>
                           </div>
                       </div>
-
-                      {/* Middle Row: Quantity & Price (Swapped Positions: Quantity Left, Price Right) */}
                       <div className="grid grid-cols-2 gap-3 mb-3">
-                          {/* Quantity Input (Now Left) */}
                           {item.category === 'STOCK' ? (
                             <div className="bg-gray-50 rounded-xl p-2">
                                 <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">Quantity</label>
-                                <input 
-                                    type="number" 
-                                    value={item.amount} 
-                                    onChange={(e) => updateScannedItem(idx, 'amount', Number(e.target.value))}
-                                    className="w-full bg-transparent font-black text-gray-700 outline-none"
-                                />
+                                <input type="number" value={item.amount} onChange={(e) => updateScannedItem(idx, 'amount', Number(e.target.value))} className="w-full bg-transparent font-black text-gray-700 outline-none" />
                             </div>
                           ) : (
-                            // Cash Balance on Left
                             <div className="bg-gray-50 rounded-xl p-2">
                                 <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">Balance</label>
-                                <input 
-                                    type="number" 
-                                    value={item.amount} 
-                                    onChange={(e) => updateScannedItem(idx, 'amount', Number(e.target.value))}
-                                    className="w-full bg-transparent font-black text-gray-700 outline-none"
-                                />
+                                <input type="number" value={item.amount} onChange={(e) => updateScannedItem(idx, 'amount', Number(e.target.value))} className="w-full bg-transparent font-black text-gray-700 outline-none" />
                             </div>
                           )}
-
-                          {/* Price Input (Now Right) */}
                           {item.category === 'STOCK' && (
                               <div className="bg-blue-50 rounded-xl p-2">
                                   <label className="text-[9px] font-black text-blue-400 uppercase block mb-1">Price ({item.currency})</label>
-                                  <input 
-                                      type="number" 
-                                      value={item.price || ''} 
-                                      onChange={(e) => updateScannedItem(idx, 'price', Number(e.target.value))}
-                                      className="w-full bg-transparent font-black text-blue-600 outline-none"
-                                      placeholder="0.00"
-                                  />
+                                  <input type="number" value={item.price || ''} onChange={(e) => updateScannedItem(idx, 'price', Number(e.target.value))} className="w-full bg-transparent font-black text-blue-600 outline-none" placeholder="0.00" />
                               </div>
                           )}
                       </div>
-
-                      {/* Bottom Row: Total Estimate */}
                       <div className="flex justify-between items-center pt-2 border-t border-gray-50">
-                          <div className="text-[10px] font-bold text-gray-400 flex items-center gap-1">
-                             <Calculator size={12}/> Est. Value
-                          </div>
-                          <div className="font-black text-gray-800">
-                             {item.currency} {estValue.toLocaleString(undefined, {maximumFractionDigits: 0})}
-                          </div>
+                          <div className="text-[10px] font-bold text-gray-400 flex items-center gap-1"><Calculator size={12}/> Est. Value</div>
+                          <div className="font-black text-gray-800">{item.currency} {estValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
                       </div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Import Button */}
               <div className="fixed bottom-28 left-6 right-6 z-40">
                 <button onClick={async () => {
                    const enriched = scannedItems.map(item => ({
@@ -587,31 +571,25 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
                    }));
                    await handleFinalSave([...localAccounts, ...enriched]);
                    setScannedItems([]);
-                }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg hover:bg-blue-700 transition-colors">
-                    確認匯入 ({scannedItems.length} 筆)
-                </button>
+                }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg hover:bg-blue-700 transition-colors">確認匯入 ({scannedItems.length} 筆)</button>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* 新增資產彈窗 (Batch Entry) */}
+      {/* 新增資產彈窗 */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-6 z-[9999] backdrop-blur-md">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 space-y-6 relative animate-in zoom-in-95">
-            {/* Added Counter */}
             {addedCount > 0 && (
                 <div className="absolute top-4 left-0 right-0 flex justify-center pointer-events-none">
-                    <div className="bg-green-100 text-green-700 text-[10px] font-black px-3 py-1 rounded-full shadow-sm animate-in slide-in-from-top-2 flex items-center gap-1">
-                        <Check size={10} /> {addedCount} Added
-                    </div>
+                    <div className="bg-green-100 text-green-700 text-[10px] font-black px-3 py-1 rounded-full shadow-sm animate-in slide-in-from-top-2 flex items-center gap-1"><Check size={10} /> {addedCount} Added</div>
                 </div>
             )}
 
             <div className="flex justify-between items-center">
               <h3 className="font-black text-xl italic uppercase tracking-tighter">新增 {newAssetType === AccountType.STOCK ? '股票' : '銀行'}</h3>
-              {/* Close Button behaves as 'Done' */}
               <button onClick={() => { setIsModalOpen(false); setPreviewPrice(""); setPreviewYield(""); }} className="text-gray-300 hover:text-gray-600"><X size={24}/></button>
             </div>
 
@@ -640,9 +618,7 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
                 <div className="space-y-1">
                     <label className="text-[10px] font-black text-gray-400 uppercase">貨幣</label>
                     <select value={newItemData.currency} onChange={e => setNewItemData({...newItemData, currency: e.target.value as Currency})} className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold text-gray-700">
-                        <option value="HKD">HKD</option>
-                        <option value="AUD">AUD</option>
-                        <option value="USD">USD</option>
+                        <option value="HKD">HKD</option><option value="AUD">AUD</option><option value="USD">USD</option>
                     </select>
                 </div>
               )}
@@ -664,14 +640,9 @@ const UpdatePage: React.FC<UpdatePageProps> = ({ accounts, onSave, userPwd }) =>
                 <input type="number" value={newItemData.amount} onChange={e => setNewItemData({...newItemData, amount: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl outline-none font-bold" placeholder="0.00" />
               </div>
               
-              {/* Batch Action Buttons */}
               <div className="flex gap-3 pt-2">
-                 <button onClick={() => { setIsModalOpen(false); setPreviewPrice(""); setPreviewYield(""); }} className="flex-1 py-4 bg-gray-100 text-gray-500 rounded-2xl font-bold">
-                     Done
-                 </button>
-                 <button onClick={handleAddToLocalList} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2">
-                     Add to List <Plus size={18} />
-                 </button>
+                 <button onClick={() => { setIsModalOpen(false); setPreviewPrice(""); setPreviewYield(""); }} className="flex-1 py-4 bg-gray-100 text-gray-500 rounded-2xl font-bold">Done</button>
+                 <button onClick={handleAddToLocalList} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2">Add to List <Plus size={18} /></button>
               </div>
             </div>
           </div>
